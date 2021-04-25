@@ -1,1 +1,124 @@
 # IoT-projects
+#define BLYNK_PRINT Serial    
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+WidgetLED PUMP(V0); 
+#include "DHT.h"
+#include <SimpleTimer.h>
+
+#define DHTPIN D4                      // pin  DATA with D4
+#define SOIL_MOIST_1_PIN A0           // pin A0 with A0
+#define PUMP_PIN D0                  // PUMP RELAY wit D0
+#define DHTTYPE DHT11   
+#define DRY_SOIL      40                    // when sensor value == 20,soil is dry
+#define WET_SOIL      60                   // when sensor value == 50,soil is dry
+#define TIME_PUMP_ON  5                  // time interval for pump on (for 5 sec)
+ 
+#define READ_SOIL_HUM_TM  10L 
+#define READ_AIR_DATA_TM  2L  
+#define SEND_UP_DATA_TM   10L 
+#define AUTO_CTRL_TM      60L 
+
+char auth[] ="lf-55ZDk0XDFmByXh1wiRrfh52LfmkoA";  
+char ssid[] = "Redmi Note 7 Pro"; 
+char pass[] = "1234abcd";
+
+float humDHT = 0;
+float tempDHT = 0;
+int soilMoist = 0;
+
+boolean pumpStatus = 0;
+int timePumpOn = 1; 
+long sampleTimingSeconds = 20; 
+long startTiming = 0;
+long elapsedTime = 0;
+
+SimpleTimer timer;
+DHT dht(DHTPIN, DHTTYPE);
+
+void setup() {
+  pinMode(PUMP_PIN, OUTPUT);    // D4~pin set for motor output
+ aplyCmd();
+  Serial.begin(115200);
+  dht.begin();    
+
+  Blynk.begin( auth, ssid , pass );
+  PUMP.off();
+ startTimers();
+}
+
+
+void loop() {
+  timer.run(); 
+  Blynk.run();
+}
+BLYNK_WRITE(3) {           // function for turing off autocontrol 
+  int i = param.asInt();
+  if (i == 1)
+  {
+    pumpStatus = !pumpStatus;
+    aplyCmd();
+  }
+}
+void getSoilMoist(void){        // function to get soil moisture
+  int i = 0;
+  soilMoist = 0;
+  for (i = 0; i < 10; i++) {
+    soilMoist += analogRead(SOIL_MOIST_1_PIN); 
+    delay(20);   
+  }
+  soilMoist = soilMoist / (i);
+  soilMoist = map(soilMoist, 1023, 0, 0, 100); 
+
+}
+
+
+void getDhtData(void){                // function to get dht reading
+tempDHT = dht.readTemperature();    // function in dht library to get temperature reading
+  
+humDHT = dht.readHumidity();      // function in dht library to get humidity reading
+  
+  if (isnan(humDHT) || isnan(tempDHT)){
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+}
+void aplyCmd(){     // co-function of auto control and motor on/off
+  
+  if (pumpStatus == 1){
+    Blynk.notify("pump ON");
+    digitalWrite(PUMP_PIN, HIGH);    
+    PUMP.on();
+  }
+  else {
+    digitalWrite(PUMP_PIN, LOW);   
+    PUMP.off();
+  }
+}
+void autoControlPlantation(void)
+{   					//auto_Control_Plantation or auto Control
+  if (soilMoist < DRY_SOIL){
+    
+turnPumpOn();
+  }
+}
+void turnPumpOn()
+{				     // co funtion off auto control helps to on the pump
+  pumpStatus = 1;
+  aplyCmd();
+  delay (TIME_PUMP_ON * 1000);
+  pumpStatus = 0;
+  aplyCmd();
+}
+void startTimers(void)
+{		          // different time inerval for differant oprations 
+  timer.setInterval(READ_AIR_DATA_TM * 1000, getDhtData);   // refresh rate for sensor 
+  timer.setInterval(READ_SOIL_HUM_TM * 1000, getSoilMoist); // refresh rate for moisture sensor
+  timer.setInterval(SEND_UP_DATA_TM * 1000, sendUptime);    // data refresh rate
+  timer.setInterval(AUTO_CTRL_TM * 1000, autoControlPlantation); // auto control refresh rate
+}
+void sendUptime(){  // vertual node setup for blynk
+  Blynk.virtualWrite(V1, tempDHT); 
+  Blynk.virtualWrite(V2, humDHT); 
+  Blynk.virtualWrite(V3, soilMoist);
+}   
